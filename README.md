@@ -2,6 +2,7 @@ social_login
 ============
 
 Authorization through facebook.com, vk.com, odnoklassniki.ru for Django site 
+requearied django 1.5, requests
 
 Для работы приложения необходимо в settings.py добавить следующие переменные:<br>
 Выдаются при регистрации приложения в соц. сети<br>
