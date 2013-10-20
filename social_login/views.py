@@ -129,9 +129,8 @@ def get_user_info(network, code):
 
 def login(request, network):
     code = request.GET.get('code')
-    error = request.GET.get('error')
     user_info = get_user_info(network, code)
-    if not user_info or error=='access_denied':
+    if not user_info or 'error' in request.GET:
         return redirect(settings.USER_ACCESS_DENIED_URL) # Перенаправление в случаях отказа пользователя или при неудачном получении данных от соц. сети
 
     if not code or network not in('VK', 'OK', 'FB'):
