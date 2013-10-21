@@ -17,110 +17,132 @@ import traceback
 logger = logging.getLogger('social_login')
 
 
-def get_user_info(network, code):
+def get_vk_user_info(network, code):
+    """ "Для Вконтакте обращение к API осуществляется только через метод GET" """
 
     user_info = None
     redirect_url = 'http://' + Site.objects.get_current().domain + reverse('social:login', args=(network,))#url по типу 'http://mysite.com/social_login/VK/'
+    get_access_token_url = 'https://oauth.vk.com/access_token?client_id=%s&client_secret=%s&code=%s&redirect_uri=%s' \
+                       %(settings.VK_APP_ID, settings.VK_SECRET_KEY, code, redirect_url)
+    resp = requests.get(get_access_token_url) # Получаем access_token
 
-    if network == 'VK':
-        '''Для Вконтакте обращение к API осуществляется только через метод GET'''
+    if resp.status_code == 200:
+        social_user_id = json.loads(resp.text).get('user_id')
+        access_token = json.loads(resp.text).get('access_token')
 
-        get_access_token_url = 'https://oauth.vk.com/access_token?client_id=%s&client_secret=%s&code=%s&redirect_uri=%s' \
-                           %(settings.VK_APP_ID, settings.VK_SECRET_KEY, code, redirect_url)
+        if not (social_user_id or access_token):
+            logger.exception(u'Не удалось получить access_token \n Ответ от https://oauth.vk.com/access_token: ' + resp.text)
+            return redirect(settings.USER_ACCESS_DENIED_URL)
 
-        resp = requests.get(get_access_token_url) # Получаем access_token
+        resp = requests.get('https://api.vk.com/method/users.get?uids=%s&fields=uid,first_name,last_name&access_token=%s'\
+                            %(social_user_id, access_token))# Получаем личные данные пользователя
+        response = json.loads(resp.text).get('response')
 
-        if resp.status_code == 200:
-            social_user_id = json.loads(resp.text).get('user_id')
-            access_token = json.loads(resp.text).get('access_token')
+        if not response:
+            logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от https://api.vk.com/method/users.get: ' + resp.text)
+            return redirect(settings.USER_ACCESS_DENIED_URL)
+        else:
+            user_info = response[0]
+            user_info = {
+                'id': user_info['uid'],
+                'first_name': user_info['first_name'],
+                'last_name': user_info['last_name'],
+            }
+            return user_info
+    else:
+        logger.exception(u'В ответ от https://oauth.vk.com/access_token получен status_code = %d Ответ содержит:%s' % (resp.status_code, resp.text))
+        return redirect(settings.USER_ACCESS_DENIED_URL)
 
-            if not (social_user_id or access_token):
-                logger.exception(u'Не удалось получить access_token \n Ответ от https://oauth.vk.com/access_token: ' + resp.text)
 
-            resp = requests.get('https://api.vk.com/method/users.get?uids=%s&fields=uid,first_name,last_name&access_token=%s'\
-                                %(social_user_id, access_token))# Получаем личные данные пользователя
-            response = json.loads(resp.text).get('response')
+def get_ok_user_info(network, code):
+    """ "Для Одноклассников обращение к API осуществляется только через метод POST" """
 
-            if not response:
-                logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от https://api.vk.com/method/users.get: ' + resp.text)
+    user_info = None
+    redirect_url = 'http://' + Site.objects.get_current().domain + reverse('social:login', args=(network,))#url по типу 'http://mysite.com/social_login/OK/'
+    params = {
+        'code': code,
+        'redirect_uri': redirect_url ,
+        'grant_type': 'authorization_code',
+        'client_id': settings.OK_APP_ID,
+        'client_secret': settings.OK_SECRET_KEY,
+        }
+    resp = requests.post('http://api.odnoklassniki.ru/oauth/token.do', data=params) # Получаем access_token
+
+    if resp.status_code == 200:
+        access_token = json.loads(resp.text).get('access_token')
+
+        if not access_token:
+            logger.exception(u'Не удалось получить access_token \n Ответ от http://api.odnoklassniki.ru/oauth/token.do: ' + resp.text)
+            return redirect(settings.USER_ACCESS_DENIED_URL)
+        else:
+            params = {
+                'sig': md5('application_key=%sformat=JSONmethod=users.getCurrentUser' \
+                           % settings.OK_PUBLIC_KEY + md5(access_token+settings.OK_SECRET_KEY).hexdigest()).hexdigest().lower(),
+                'access_token': access_token,
+                'application_key': settings.OK_PUBLIC_KEY,
+                'method': 'users.getCurrentUser',
+                'format':'JSON',
+            }
+            response = requests.post('http://api.odnoklassniki.ru/fb.do', data=params) # Получаем личные данные пользователя
+
+            if not ('uid' and 'first_name' and 'last_name') in response.text:
+                logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от http://api.odnoklassniki.ru/fb.do: ' + response.text)
+                return redirect(settings.USER_ACCESS_DENIED_URL)
             else:
-                user_info = response[0]
+                user_info = json.loads(response.text)
                 user_info = {
                     'id': user_info['uid'],
                     'first_name': user_info['first_name'],
                     'last_name': user_info['last_name'],
                 }
-        else:
-            logger.exception(u'В ответ от https://oauth.vk.com/access_token получен status_code = %d Ответ содержит:%s' % (resp.status_code, resp.text))
+                return user_info
+    else:
+        logger.exception(u'В ответ от http://api.odnoklassniki.ru/oauth/token.do получен status_code = %d Ответ содержит:%s'\
+                         % (resp.status_code, resp.text))
+        return redirect(settings.USER_ACCESS_DENIED_URL)
 
 
-    elif network == 'OK':
-        '''Для Одноклассников обращение к API осуществляется только через метод POST'''
+def get_fb_user_info(network, code):
+    """ "Получение данных пользователя Facebook" """
+    user_info = None
+    redirect_url = 'http://' + 'localhost:8000' + reverse('social:login', args=(network,))#url по типу 'http://mysite.com/social_login/OK/'
+    get_access_token_url = 'https://graph.facebook.com/oauth/access_token?client_id=%s&redirect_uri=%s&client_secret=%s&code=%s'\
+                           % (settings.FB_APP_ID, redirect_url, settings.FB_SECRET_KEY, code)
+    resp = requests.get(get_access_token_url)# Получаем access_token
 
-        params = {
-            'code': code,
-            'redirect_uri': redirect_url ,
-            'grant_type': 'authorization_code',
-            'client_id': settings.OK_APP_ID,
-            'client_secret': settings.OK_SECRET_KEY,
-            }
-        resp = requests.post('http://api.odnoklassniki.ru/oauth/token.do', data=params) # Получаем access_token
+    if resp.status_code == 200 and resp.text.startswith('access_token'):
+            access_token = [pair.split('=')[1] for pair in resp.text.split('&') if pair.startswith('access_token')][0]
+            fb_user_info = requests.get('https://graph.facebook.com/me?access_token='+access_token)# Получаем личные данные пользователя
 
-        if resp.status_code == 200:
-            access_token = json.loads(resp.text).get('access_token')
-
-            if not access_token:
-                logger.exception(u'Не удалось получить access_token \n Ответ от http://api.odnoklassniki.ru/oauth/token.do: ' + resp.text)
+            if not ('id' and 'first_name' and 'last_name') in fb_user_info.text:
+                logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от https://graph.facebook.com/me: ' + fb_user_info.text)
             else:
-                params = {
-                    'sig': md5('application_key=%sformat=JSONmethod=users.getCurrentUser' \
-                               % settings.OK_PUBLIC_KEY + md5(access_token+settings.OK_SECRET_KEY).hexdigest()).hexdigest().lower(),
-                    'access_token': access_token,
-                    'application_key': settings.OK_PUBLIC_KEY,
-                    'method': 'users.getCurrentUser',
-                    'format':'JSON',
+                user_info = json.loads(fb_user_info.text)
+                user_info = {
+                    'id': user_info['id'],
+                    'first_name': user_info['first_name'],
+                    'last_name': user_info['last_name'],
                 }
-                response = requests.post('http://api.odnoklassniki.ru/fb.do', data=params) # Получаем личные данные пользователя
+                return user_info
+    else:
+        logger.exception(u'Не удалось получить access_token \n Ответ от https://graph.facebook.com/oauth/access_token: ' + resp.text)
+        return redirect(settings.USER_ACCESS_DENIED_URL)
 
-                if not ('uid' and 'first_name' and 'last_name') in response.text:
-                    logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от http://api.odnoklassniki.ru/fb.do: ' + response.text)
-                else:
-                    user_info = json.loads(response.text)
-                    user_info = {
-                        'id': user_info['uid'],
-                        'first_name': user_info['first_name'],
-                        'last_name': user_info['last_name'],
-                    }
+
+def social_login(request, network):
+    if request.GET.get('error'):
+        return redirect(settings.USER_ACCESS_DENIED_URL)
+    elif request.GET.get('code'):
+        code = request.GET.get('code')
+
+        if network == 'VK':
+            user_info = get_vk_user_info(network, code)
+        elif network == 'OK':
+            user_info = get_ok_user_info(network, code)
+        elif network == 'FB':
+            user_info = get_fb_user_info(network, code)
         else:
-            logger.exception(u'В ответ от http://api.odnoklassniki.ru/oauth/token.do получен status_code = %d Ответ содержит:%s'\
-                             % (resp.status_code, resp.text))
-
-
-    elif network == 'FB':
-        '''Получение данных пользователя Facebook'''
-
-        get_access_token_url = 'https://graph.facebook.com/oauth/access_token?client_id=%s&redirect_uri=%s&client_secret=%s&code=%s'\
-                               % (settings.FB_APP_ID, redirect_url, settings.FB_SECRET_KEY, code)
-        resp = requests.get(get_access_token_url)# Получаем access_token
-
-        if resp.status_code == 200:
-
-            if not resp.text.startswith('access_token'):
-                logger.exception(u'Не удалось получить access_token \n Ответ от https://graph.facebook.com/oauth/access_token: ' + resp.text)
-            else:
-                access_token = [pair.split('=')[1] for pair in resp.text.split('&') if pair.startswith('access_token')][0]
-                fb_user_info = requests.get('https://graph.facebook.com/me?access_token='+access_token)# Получаем личные данные пользователя
-
-                if not ('id' and 'first_name' and 'last_name') in fb_user_info.text:
-                    logger.exception(u'Не удалось получить информацию о пользователе \n Ответ от https://graph.facebook.com/me: ' + fb_user_info.text)
-                else:
-                    user_info = json.loads(fb_user_info.text)
-                    user_info = {
-                        'id': user_info['id'],
-                        'first_name': user_info['first_name'],
-                        'last_name': user_info['last_name'],
-                    }
-        else:
+<<<<<<< HEAD
             logger.exception(u'В ответ от https://graph.facebook.com/oauth/access_token получен status_code = %d Ответ содержит:%s' \
                              % (resp.status_code, resp.text))
 
@@ -134,6 +156,10 @@ def login(request, network):
         return redirect(settings.USER_ACCESS_DENIED_URL) # Перенаправление в случаях отказа пользователя или при неудачном получении данных от соц. сети
 
     if not code or network not in('VK', 'OK', 'FB'):
+=======
+            raise Http404
+    else:
+>>>>>>> cv
         raise Http404
 
     try:
