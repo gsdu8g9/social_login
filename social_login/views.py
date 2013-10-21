@@ -3,7 +3,7 @@ from megae import settings
 from social_login.models import SocialLogin
 from django.contrib.sites.models import Site
 from django.contrib.auth.models import User
-from django.contrib.auth import login as auth_login
+from django.contrib.auth import login
 from django.core.urlresolvers import reverse
 from django.shortcuts import redirect
 from django.http import Http404
@@ -105,7 +105,7 @@ def get_ok_user_info(network, code):
 def get_fb_user_info(network, code):
     """ "Получение данных пользователя Facebook" """
     user_info = None
-    redirect_url = 'http://' + 'localhost:8000' + reverse('social:login', args=(network,))#url по типу 'http://mysite.com/social_login/OK/'
+    redirect_url = 'http://' + Site.objects.get_current().domain + reverse('social:login', args=(network,))#url по типу 'http://mysite.com/social_login/OK/'
     get_access_token_url = 'https://graph.facebook.com/oauth/access_token?client_id=%s&redirect_uri=%s&client_secret=%s&code=%s'\
                            % (settings.FB_APP_ID, redirect_url, settings.FB_SECRET_KEY, code)
     resp = requests.get(get_access_token_url)# Получаем access_token
@@ -142,25 +142,20 @@ def social_login(request, network):
         elif network == 'FB':
             user_info = get_fb_user_info(network, code)
         else:
-<<<<<<< HEAD
             logger.exception(u'В ответ от https://graph.facebook.com/oauth/access_token получен status_code = %d Ответ содержит:%s' \
                              % (resp.status_code, resp.text))
 
     return user_info
 
 
-def login(request, network):
+def social_login(request, network):
     code = request.GET.get('code')
     user_info = get_user_info(network, code)
     if not user_info or 'error' in request.GET:
         return redirect(settings.USER_ACCESS_DENIED_URL) # Перенаправление в случаях отказа пользователя или при неудачном получении данных от соц. сети
 
     if not code or network not in('VK', 'OK', 'FB'):
-=======
             raise Http404
-    else:
->>>>>>> cv
-        raise Http404
 
     try:
         social_login = SocialLogin.objects.get(social_id=user_info['id'], social_network=network)
@@ -179,7 +174,7 @@ def login(request, network):
         SocialLogin.objects.create(social_id=user_info['id'], social_network=network, user=user)
 
     user.backend = 'django.contrib.auth.backends.ModelBackend'
-    auth_login(request, user)
+    login(request, user)
 
     return redirect(settings.SUCCESS_LOGIN_URL) # Перенаправление после удачной авторизации
 
