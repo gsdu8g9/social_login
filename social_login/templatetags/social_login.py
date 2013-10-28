@@ -23,7 +23,7 @@ class AuthLinkNode(template.Node):
 
         elif self.network == 'ok':
             link = u'http://www.odnoklassniki.ru/oauth/authorize?client_id=199223040&scope=PHOTO CONTENT;SET STATUS&response_type=code&redirect_uri=%s'\
-                   % request.build_absolute_uri(reverse('social_login:ok'))
+                   % request.build_absolute_uri(reverse('social_login:odnokl'))
             return link
 
         elif self.network == 'fb':
