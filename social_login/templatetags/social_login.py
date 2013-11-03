@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 from django import template
 from django.core.urlresolvers import reverse
+from django.conf import settings
 register = template.Library()
 
 @register.tag(name="auth_url")
@@ -17,16 +18,16 @@ class AuthLinkNode(template.Node):
     def render(self, context):
         request = context['request']
         if self.network == 'vk':
-            link = u'https://oauth.vk.com/authorize?client_id=3939876&scope=photos&response_type=code&v=5.2&redirect_uri=%s'\
-                   % request.build_absolute_uri(reverse('social_login:vk'))
+            link = u'https://oauth.vk.com/authorize?client_id=%s&scope=photos&response_type=code&v=5.2&redirect_uri=%s'\
+                   % (settings.SOCIAL_LOGIN_VK_APP_ID, request.build_absolute_uri(reverse('social_login:vk')))
             return link
 
-        elif self.network == 'ok':
-            link = u'http://www.odnoklassniki.ru/oauth/authorize?client_id=199223040&scope=PHOTO CONTENT;SET STATUS&response_type=code&redirect_uri=%s'\
-                   % request.build_absolute_uri(reverse('social_login:odnokl'))
+        elif self.network == 'odnokl':
+            link = u'http://www.odnoklassniki.ru/oauth/authorize?client_id=%s&scope=PHOTO CONTENT;SET STATUS&response_type=code&redirect_uri=%s'\
+                   % (settings.SOCIAL_LOGIN_OK_APP_ID, request.build_absolute_uri(reverse('social_login:odnokl')))
             return link
 
         elif self.network == 'fb':
-            link = u'https://www.facebook.com/dialog/oauth?client_id=555492771173128&response_type=code&redirect_uri=%s'\
-                   % request.build_absolute_uri(reverse('social_login:fb'))
+            link = u'https://www.facebook.com/dialog/oauth?client_id=%s&response_type=code&redirect_uri=%s'\
+                   % (settings.SOCIAL_LOGIN_FB_APP_ID, request.build_absolute_uri(reverse('social_login:fb')))
             return link
